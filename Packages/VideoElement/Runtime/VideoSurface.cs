@@ -18,10 +18,11 @@ namespace HTML
     public class VideoSurface : MonoBehaviour
     {
         private Renderer _renderer = null;
+        private Material _material = null;
         private Texture2D _nativeTexture = null;
         /* only one of the following should be set, depends on VideoSurfaceType */
         private RawImage _rawImage = null;
-        public HTML.VideoElement Element { get; set; }
+        public VideoElement Element { get; set; }
 
         [SerializeField]
         private VideoSurfaceType _videoSurfaceType = VideoSurfaceType.Renderer;
@@ -81,7 +82,7 @@ namespace HTML
             }
             else
             {
-                UpdateShader();
+                UpdateMaterial();
             }
         }
 
@@ -134,7 +135,7 @@ namespace HTML
 
         void OnDestroy()
         {
-            Enabled = false;
+            RenderingEnabled = false;
 
             DestroyTexture();
 
@@ -145,13 +146,23 @@ namespace HTML
                 _renderTexture = null;
             }
 
-            _renderer = null;
+            if (_material != null)
+            {
+                Destroy(_material);
+                _material = null;
+            }
         }
 
         public Renderer Renderer
         {
             get => _renderer;
             set => _renderer = value;
+        }
+
+        public Material Material
+        {
+            get => _material;
+            private set => _material = value;
         }
 
         public VideoSurfaceType VideoSurfaceType
@@ -166,7 +177,7 @@ namespace HTML
         * - true: (Default) Start.
         * - false: Stop.
         */
-        public bool Enabled
+        public bool RenderingEnabled
         {
             get => _enable;
             set => _enable = (_renderer != null || _rawImage != null) && value;
@@ -177,7 +188,7 @@ namespace HTML
             if (_videoSurfaceType == VideoSurfaceType.Renderer)
             {
                 // if never assigned or assigned texture is not Texture2D, we will consider it blank and create a new one
-                return _renderer.material.mainTexture == null || !(_renderer.material.mainTexture is Texture2D);
+                return _material.mainTexture == null || !(_material.mainTexture is Texture2D);
             }
             else if (_videoSurfaceType == VideoSurfaceType.RawImage)
             {
@@ -185,7 +196,7 @@ namespace HTML
             }
             else if (_videoSurfaceType == VideoSurfaceType.RenderTexture)
             {
-                return _renderer.material.mainTexture == null || !(_renderer.material.mainTexture is RenderTexture);
+                return _material.mainTexture == null || !(_material.mainTexture is RenderTexture);
             }
             else
             {
@@ -217,7 +228,7 @@ namespace HTML
         {
             if (_videoSurfaceType == VideoSurfaceType.Renderer || _videoSurfaceType == VideoSurfaceType.RenderTexture)
             {
-                _renderer.material.mainTexture = texture;
+                _material.mainTexture = texture;
             }
             else if (_videoSurfaceType == VideoSurfaceType.RawImage)
             {
@@ -235,19 +246,27 @@ namespace HTML
             }
         }
 
-        private void UpdateShader()
+        private void UpdateMaterial()
         {
-#if UNITY_EDITOR
-            // Editor で実行中の場合暗くなりすぎないように Unlit/Texture シェーダーを使用
-            if (TryGetComponent<MeshRenderer>(out var mesh))
-            {
-                mesh.material = new Material(Shader.Find("Unlit/Texture"));
-            }
-#elif UNITY_WEBGL
+#if !UNITY_EDITOR && UNITY_WEBGL
             if (_renderer != null)
             {
                 // WebGL では UV マッピングが反転するため、Y 軸反転シェーダーを変更
-                _renderer.material = new Material(Shader.Find("Unlit/FlipY"));
+                var shader = Shader.Find("Unlit/FlipY");
+                if (shader != null)
+                {
+                    _renderer.material = _material = new Material(shader);
+                }
+                else
+                {
+                    Debug.LogWarning("Failed to find shader: Unlit/FlipY");
+                    _material = new Material(_renderer.material);
+                    _renderer.material = _material;
+                }
+            }
+            else if (_rawImage == null)
+            {
+                // TODO: rawImage で Y 軸反転が必要か確認する
             }
 #endif
         }
